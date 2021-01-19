@@ -491,14 +491,31 @@ int test7(struct Options options)
 	  rc = MQTTAsync_sendMessage(c, test_topic, &pubmsg, &pubopts);
 	  assert("Good rc from sendMessage", rc == MQTTASYNC_SUCCESS, "rc was %d\n", rc);
 	  if (rc != MQTTASYNC_SUCCESS)
-		  break;
+	  {
+		MySleep(3000);
+		MyLog(LOGA_DEBUG, "Connecting client c");
+		rc = MQTTAsync_connect(c, &opts);
+		assert("Good rc from connect", rc == MQTTASYNC_SUCCESS, "rc was %d ", rc);
+		if (rc != MQTTASYNC_SUCCESS)
+		{
+			failures++;
+			goto exit;
+		}
+
+		count = 0;
+		while (!test7c_connected && ++count < 10000)
+			MySleep(100);
+		assert("Count should be less than 10000", count < 10000, "count was %d", count); /* wrong */
+		MySleep(3000);
+		break;
+	  }
 	}
 
 exit:
-	/*rc = MQTTAsync_disconnect(c, NULL);
+	rc = MQTTAsync_disconnect(c, NULL);
  	assert("Good rc from disconnect", rc == MQTTASYNC_SUCCESS, "rc was %d ", rc);
 
-	rc = MQTTAsync_disconnect(d, NULL);
+	/*rc = MQTTAsync_disconnect(d, NULL);
  	assert("Good rc from disconnect", rc == MQTTASYNC_SUCCESS, "rc was %d ", rc);*/
 
 	MySleep(200);
@@ -539,13 +556,13 @@ int main(int argc, char** argv)
 		for (options.test_no = 1; options.test_no < ARRAY_SIZE(tests); ++options.test_no)
 		{
 			failures = 0;
-			MQTTAsync_setTraceLevel(MQTTASYNC_TRACE_ERROR);
+			MQTTAsync_setTraceLevel(MQTTASYNC_TRACE_PROTOCOL);
 			rc += tests[options.test_no](options); /* return number of failures.  0 = test succeeded */
 		}
 	}
 	else
 	{
-		MQTTAsync_setTraceLevel(MQTTASYNC_TRACE_ERROR);
+		MQTTAsync_setTraceLevel(MQTTASYNC_TRACE_PROTOCOL);
 		rc = tests[options.test_no](options); /* run just the selected test */
 	}
 

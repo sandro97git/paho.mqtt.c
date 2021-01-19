@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2012, 2020 IBM Corp.
+ * Copyright (c) 2012, 2020 IBM Corp. and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v2.0
@@ -105,22 +105,33 @@ void MyLog(int LOGA_level, char* format, ...)
 {
 	static char msg_buf[256];
 	va_list args;
+#if defined(_WIN32) || defined(_WINDOWS)
 	struct timeb ts;
-
-	struct tm *timeinfo;
+#else
+	struct timeval ts;
+#endif
+	struct tm timeinfo;
 
 	if (LOGA_level == LOGA_DEBUG && options.verbose == 0)
-		return;
+	  return;
 
+#if defined(_WIN32) || defined(_WINDOWS)
 	ftime(&ts);
-	timeinfo = localtime(&ts.time);
-	strftime(msg_buf, 80, "%Y%m%d %H%M%S", timeinfo);
+	localtime_s(&timeinfo, &ts.time);
+#else
+	gettimeofday(&ts, NULL);
+	localtime_r(&ts.tv_sec, &timeinfo);
+#endif
+	strftime(msg_buf, 80, "%Y%m%d %H%M%S", &timeinfo);
 
+#if defined(_WIN32) || defined(_WINDOWS)
 	sprintf(&msg_buf[strlen(msg_buf)], ".%.3hu ", ts.millitm);
+#else
+	sprintf(&msg_buf[strlen(msg_buf)], ".%.3lu ", ts.tv_usec / 1000L);
+#endif
 
 	va_start(args, format);
-	vsnprintf(&msg_buf[strlen(msg_buf)], sizeof(msg_buf) - strlen(msg_buf),
-			format, args);
+	vsnprintf(&msg_buf[strlen(msg_buf)], sizeof(msg_buf) - strlen(msg_buf), format, args);
 	va_end(args);
 
 	printf("%s\n", msg_buf);
@@ -377,7 +388,7 @@ void test1cOnConnect(void* context, MQTTAsync_successData* response)
 
 int test1dReady = 0;
 char willTopic[100];
-char test_topic[50];
+char test_topic[100];
 
 void test1donSubscribe(void* context, MQTTAsync_successData* response)
 {
@@ -426,8 +437,8 @@ int test1(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	sprintf(willTopic, "paho-test9-1-%s", unique);
@@ -461,6 +472,7 @@ int test1(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	//opts.username = "testuser";
 	//opts.password = "testpassword";
 
@@ -637,7 +649,7 @@ void test2cOnConnect(void* context, MQTTAsync_successData* response)
 
 int test2dReady = 0;
 char willTopic[100];
-char test_topic[50];
+char test_topic[100];
 
 void test2donSubscribe(void* context, MQTTAsync_successData* response)
 {
@@ -686,8 +698,8 @@ int test2(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 	char *URIs[2] = {"rubbish", options.proxy_connection};
 
@@ -722,6 +734,7 @@ int test2(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 
 	rc = MQTTAsync_setCallbacks(d, d, NULL, test2_messageArrived, NULL);
 	assert("Good rc from setCallbacks", rc == MQTTASYNC_SUCCESS, "rc was %d", rc);
@@ -907,7 +920,7 @@ void test3cOnConnect(void* context, MQTTAsync_successData* response)
 
 int test3dReady = 0;
 char willTopic[100];
-char test_topic[50];
+char test_topic[100];
 
 void test3donSubscribe(void* context, MQTTAsync_successData* response)
 {
@@ -956,8 +969,8 @@ int test3(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	sprintf(willTopic, "paho-test9-3-%s", unique);
@@ -991,6 +1004,7 @@ int test3(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	//opts.username = "testuser";
 	//opts.password = "testpassword";
 
@@ -1165,7 +1179,7 @@ void test4cOnConnect(void* context, MQTTAsync_successData* response)
 
 int test4dReady = 0;
 char willTopic[100];
-char test_topic[50];
+char test_topic[100];
 
 void test4donSubscribe(void* context, MQTTAsync_successData* response)
 {
@@ -1214,8 +1228,8 @@ int test4(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 	char *URIs[2] = {"rubbish", options.proxy_connection};
 
@@ -1250,6 +1264,7 @@ int test4(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 
 	rc = MQTTAsync_setCallbacks(d, d, NULL, test4_messageArrived, NULL);
 	assert("Good rc from setCallbacks", rc == MQTTASYNC_SUCCESS, "rc was %d", rc);
@@ -1424,7 +1439,7 @@ void test5cOnConnect(void* context, MQTTAsync_successData* response)
 
 int test5dReady = 0;
 char willTopic[100];
-char test_topic[50];
+char test_topic[100];
 
 void test5donSubscribe(void* context, MQTTAsync_successData* response)
 {
@@ -1471,8 +1486,8 @@ int test5(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	sprintf(willTopic, "paho-test9-5-%s", unique);
@@ -1507,6 +1522,7 @@ int test5(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	//opts.username = "testuser";
 	//opts.password = "testpassword";
 
@@ -1626,8 +1642,8 @@ int test6(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	test5_will_message_received = 0;
@@ -1668,6 +1684,7 @@ int test6(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	//opts.username = "testuser";
 	//opts.password = "testpassword";
 
@@ -1886,8 +1903,8 @@ int test7(struct Options options)
 	//MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	test7_will_message_received = 0;
@@ -1925,6 +1942,7 @@ int test7(struct Options options)
 
 	opts.keepAliveInterval = 5;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 
 	rc = MQTTAsync_setCallbacks(d, d, NULL, test7_messageArrived, NULL);
 	assert("Good rc from setCallbacks", rc == MQTTASYNC_SUCCESS, "rc was %d", rc);
@@ -2129,8 +2147,8 @@ int test8(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	sprintf(willTopic, "paho-test9-8-%s", unique);
@@ -2202,6 +2220,7 @@ int test8(struct Options options)
 	opts.onSuccess = test8dOnConnect;
 	opts.onFailure = test8OnFailure;
 	opts.context = d;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	MyLog(LOGA_DEBUG, "Connecting client d");
 	rc = MQTTAsync_connect(d, &opts);
 	assert("Good rc from connect", rc == MQTTASYNC_SUCCESS, "rc was %d ", rc);
@@ -2317,7 +2336,7 @@ int test9(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
+	char clientidc[70];
 	int i = 0;
 	START_TIME_TYPE start;
 	int no_buffered_messages = 50000;
@@ -2380,6 +2399,7 @@ int test9(struct Options options)
 	opts.onFailure = test9OnFailure;
 	opts.context = c;
 	opts.cleansession = 1;
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 
 	MyLog(LOGA_DEBUG, "Connecting client c");
 	rc = MQTTAsync_connect(c, &opts);
@@ -2492,8 +2512,8 @@ int test10(struct Options options)
 	MQTTAsync_createOptions createOptions = MQTTAsync_createOptions_initializer;
 	int rc = 0;
 	int count = 0;
-	char clientidc[50];
-	char clientidd[50];
+	char clientidc[70];
+	char clientidd[70];
 	int i = 0;
 
 	sprintf(willTopic, "paho-test9-10-%s", unique);
@@ -2533,6 +2553,7 @@ int test10(struct Options options)
 	assert("Good rc from setCallbacks", rc == MQTTASYNC_SUCCESS, "rc was %d", rc);
 
 	/* let client d go and subscribe */
+	opts.MQTTVersion = MQTTVERSION_3_1_1; /* proxy doesn't handle MQTT 3.1 */
 	opts.onSuccess = test10dOnConnect;
 	opts.onFailure = test10OnFailure;
 	opts.context = d;

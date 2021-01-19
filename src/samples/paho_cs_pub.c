@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2012, 2018 IBM Corp.
+ * Copyright (c) 2012, 2020 IBM Corp.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v2.0
@@ -48,6 +48,7 @@ struct pubsub_opts opts =
 	NULL, NULL, 0, 0, /* will options */
 	0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, /* TLS options */
 	0, {NULL, NULL}, /* MQTT V5 options */
+	NULL, NULL, /* HTTP and HTTPS proxies */
 };
 
 
@@ -71,6 +72,8 @@ int myconnect(MQTTClient* client)
 	conn_opts.username = opts.username;
 	conn_opts.password = opts.password;
 	conn_opts.MQTTVersion = opts.MQTTVersion;
+	conn_opts.httpProxy = opts.http_proxy;
+	conn_opts.httpsProxy = opts.https_proxy;
 
 	if (opts.will_topic) 	/* will options */
 	{
@@ -106,6 +109,7 @@ int myconnect(MQTTClient* client)
 		conn_opts.cleanstart = 1;
 		response = MQTTClient_connect5(client, &conn_opts, &props, &willProps);
 		rc = response.reasonCode;
+		MQTTResponse_free(response);
 	}
 	else
 	{
@@ -140,6 +144,7 @@ int main(int argc, char** argv)
 	MQTTClient client;
 	MQTTProperties pub_props = MQTTProperties_initializer;
 	MQTTClient_createOptions createOpts = MQTTClient_createOptions_initializer;
+	MQTTClient_deliveryToken last_token;
 	char* buffer = NULL;
 	int rc = 0;
 	char* url;
@@ -269,11 +274,11 @@ int main(int argc, char** argv)
 		{
 			MQTTResponse response = MQTTResponse_initializer;
 
-			response = MQTTClient_publish5(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &pub_props, NULL);
+			response = MQTTClient_publish5(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &pub_props, &last_token);
 			rc = response.reasonCode;
 		}
 		else
-			rc = MQTTClient_publish(client, opts.topic, data_len, buffer, opts.qos, opts.retained, NULL);
+			rc = MQTTClient_publish(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &last_token);
 		if (opts.stdin_lines == 0)
 			break;
 
@@ -284,15 +289,17 @@ int main(int argc, char** argv)
 			{
 				MQTTResponse response = MQTTResponse_initializer;
 
-				response = MQTTClient_publish5(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &pub_props, NULL);
+				response = MQTTClient_publish5(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &pub_props, &last_token);
 				rc = response.reasonCode;
 			}
 			else
-				rc = MQTTClient_publish(client, opts.topic, data_len, buffer, opts.qos, opts.retained, NULL);
+				rc = MQTTClient_publish(client, opts.topic, data_len, buffer, opts.qos, opts.retained, &last_token);
 		}
 		if (opts.qos > 0)
 			MQTTClient_yield();
 	}
+
+	rc = MQTTClient_waitForCompletion(client, last_token, 5000);
 
 exit:
 	if (opts.filename || opts.stdin_lines)

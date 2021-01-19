@@ -302,11 +302,13 @@ typedef struct
       * The dup flag indicates whether or not this message is a duplicate.
       * It is only meaningful when receiving QoS1 messages. When true, the
       * client application should take appropriate action to deal with the
-      * duplicate message.
+      * duplicate message.  This is an output parameter only.
       */
 	int dup;
-	/** The message identifier is normally reserved for internal use by the
-      * MQTT client and server.
+	/** The message identifier is reserved for internal use by the
+      * MQTT client and server.  It is an output parameter only - writing
+      * to it will serve no purpose.  It contains the MQTT message id of
+      * an incoming publish message.
       */
 	int msgid;
 	/**
@@ -453,13 +455,16 @@ typedef struct
 	/** The version number of this structure.  Will be 0 */
 	int struct_version;
 	/**
-      * MQTT servers that support the MQTT v3.1 protocol provide authentication
-      * and authorisation by user name and password. This is the user name
-      * parameter.
-      */
+	 * MQTT servers that support the MQTT v3.1 protocol provide authentication
+	 * and authorisation by user name and password. This is the user name parameter.
+	 * Set data to NULL to remove.  To change, allocate new
+	 * storage with ::MQTTAsync_allocate - this will then be free later by the library.
+	 */
 	const char* username;
 	/**
-	 * Optional binary password.  Only checked and used if the password option is NULL
+	 * The password parameter of the MQTT authentication.
+	 * Set data to NULL to remove.  To change, allocate new
+	 * storage with ::MQTTAsync_allocate - this will then be free later by the library.
 	 */
 	struct {
 		int len;           /**< binary password length */
@@ -469,6 +474,12 @@ typedef struct
 
 #define MQTTAsync_connectData_initializer {{'M', 'Q', 'C', 'D'}, 0, NULL, {0, NULL}}
 
+/**
+ * This is a callback function which will allow the client application to update the 
+ * connection data.
+ * @param data The connection data which can be modified by the application.
+ * @return Return a non-zero value to update the connect data, zero to keep the same data.
+ */
 typedef int MQTTAsync_updateConnectOptions(void* context, MQTTAsync_connectData* data);
 
 /**
@@ -481,6 +492,29 @@ typedef int MQTTAsync_updateConnectOptions(void* context, MQTTAsync_connectData*
  * function.  NULL removes the callback setting.
  */
 LIBMQTT_API int MQTTAsync_setUpdateConnectOptions(MQTTAsync handle, void* context, MQTTAsync_updateConnectOptions* co);
+
+/**
+ * Sets the MQTTPersistence_beforeWrite() callback function for a client.
+ * @param handle A valid client handle from a successful call to MQTTAsync_create().
+ * @param context A pointer to any application-specific context. The
+ * the <i>context</i> pointer is passed to the callback function to
+ * provide access to the context information in the callback.
+ * @param co A pointer to an MQTTPersistence_beforeWrite() callback
+ * function.  NULL removes the callback setting.
+ */
+LIBMQTT_API int MQTTAsync_setBeforePersistenceWrite(MQTTAsync handle, void* context, MQTTPersistence_beforeWrite* co);
+
+
+/**
+ * Sets the MQTTPersistence_afterRead() callback function for a client.
+ * @param handle A valid client handle from a successful call to MQTTAsync_create().
+ * @param context A pointer to any application-specific context. The
+ * the <i>context</i> pointer is passed to the callback function to
+ * provide access to the context information in the callback.
+ * @param co A pointer to an MQTTPersistence_beforeWrite() callback
+ * function.  NULL removes the callback setting.
+ */
+LIBMQTT_API int MQTTAsync_setAfterPersistenceRead(MQTTAsync handle, void* context, MQTTPersistence_afterRead* co);
 
 
 /** The data returned on completion of an unsuccessful API call in the response callback onFailure. */
@@ -1010,7 +1044,14 @@ typedef struct
 {
 	/** The eyecatcher for this structure.  Must be MQTS */
 	char struct_id[4];
-	/** The version number of this structure.    Must be 0, or 1 to enable TLS version selection. */
+
+	/** The version number of this structure. Must be 0, 1, 2, 3, 4 or 5.
+	 * 0 means no sslVersion
+	 * 1 means no verify, CApath
+	 * 2 means no ssl_error_context, ssl_error_cb
+	 * 3 means no ssl_psk_cb, ssl_psk_context, disableDefaultTrustStore
+	 * 4 means no protos, protos_len
+	 */
 	int struct_version;
 
 	/** The file in PEM format containing the public digital certificates trusted by the client. */
@@ -1025,6 +1066,7 @@ typedef struct
 	* the client's private key.
 	*/
 	const char* privateKey;
+
 	/** The password to load the client's privateKey if encrypted. */
 	const char* privateKeyPassword;
 
@@ -1093,9 +1135,23 @@ typedef struct
 	 */
 	int disableDefaultTrustStore;
 
+	/**
+	 * The protocol-lists must be in wire-format, which is defined as a vector of non-empty, 8-bit length-prefixed, byte strings.
+	 * The length-prefix byte is not included in the length. Each string is limited to 255 bytes. A byte-string length of 0 is invalid.
+	 * A truncated byte-string is invalid.
+	 * Check documentation for SSL_CTX_set_alpn_protos
+	 * Exists only if struct_version >= 5
+	 */
+	const unsigned char *protos;
+
+	/**
+	 * The length of the vector protos vector
+	 * Exists only if struct_version >= 5
+	 */
+	unsigned int protos_len;
 } MQTTAsync_SSLOptions;
 
-#define MQTTAsync_SSLOptions_initializer { {'M', 'Q', 'T', 'S'}, 4, NULL, NULL, NULL, NULL, NULL, 1, MQTT_SSL_VERSION_DEFAULT, 0, NULL, NULL, NULL, NULL, NULL, 0}
+#define MQTTAsync_SSLOptions_initializer { {'M', 'Q', 'T', 'S'}, 5, NULL, NULL, NULL, NULL, NULL, 1, MQTT_SSL_VERSION_DEFAULT, 0, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0 }
 
 /** Utility structure where name/value pairs are needed */
 typedef struct
@@ -1113,14 +1169,15 @@ typedef struct
 {
 	/** The eyecatcher for this structure.  must be MQTC. */
 	char struct_id[4];
-	/** The version number of this structure.  Must be 0, 1, 2, 3 4 5 6 or 7.
+	/** The version number of this structure.  Must be 0, 1, 2, 3 4 5 6, 7 or 8.
 	  * 0 signifies no SSL options and no serverURIs
 	  * 1 signifies no serverURIs
-    * 2 signifies no MQTTVersion
-    * 3 signifies no automatic reconnect options
-    * 4 signifies no binary password option (just string)
-    * 5 signifies no MQTTV5 properties
-    * 6 signifies no HTTP headers option
+      * 2 signifies no MQTTVersion
+      * 3 signifies no automatic reconnect options
+      * 4 signifies no binary password option (just string)
+      * 5 signifies no MQTTV5 properties
+      * 6 signifies no HTTP headers option
+      * 7 signifies no HTTP proxy and HTTPS proxy options
 	  */
 	int struct_version;
 	/** The "keep alive" interval, measured in seconds, defines the maximum time
@@ -1280,23 +1337,31 @@ typedef struct
       */
 	MQTTAsync_onFailure5* onFailure5;
 	/**
-	 * httpHeaders
+	 * HTTP headers for websockets
 	 */
 	const MQTTAsync_nameValue* httpHeaders;
+	/**
+	 * HTTP proxy for websockets
+	 */
+	const char* httpProxy;
+	/**
+	 * HTTPS proxy for websockets
+	 */
+	const char* httpsProxy;
 } MQTTAsync_connectOptions;
 
 
-#define MQTTAsync_connectOptions_initializer { {'M', 'Q', 'T', 'C'}, 7, 60, 1, 65535, NULL, NULL, NULL, 30, 0,\
-NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_DEFAULT, 0, 1, 60, {0, NULL}, 0, NULL, NULL, NULL, NULL, NULL}
+#define MQTTAsync_connectOptions_initializer { {'M', 'Q', 'T', 'C'}, 8, 60, 1, 65535, NULL, NULL, NULL, 30, 0,\
+NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_DEFAULT, 0, 1, 60, {0, NULL}, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
 
-#define MQTTAsync_connectOptions_initializer5 { {'M', 'Q', 'T', 'C'}, 7, 60, 0, 65535, NULL, NULL, NULL, 30, 0,\
-NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_5, 0, 1, 60, {0, NULL}, 1, NULL, NULL, NULL, NULL, NULL}
+#define MQTTAsync_connectOptions_initializer5 { {'M', 'Q', 'T', 'C'}, 8, 60, 0, 65535, NULL, NULL, NULL, 30, 0,\
+NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_5, 0, 1, 60, {0, NULL}, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
 
-#define MQTTAsync_connectOptions_initializer_ws { {'M', 'Q', 'T', 'C'}, 7, 45, 1, 65535, NULL, NULL, NULL, 30, 0,\
-NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_DEFAULT, 0, 1, 60, {0, NULL}, 0, NULL, NULL, NULL, NULL, NULL}
+#define MQTTAsync_connectOptions_initializer_ws { {'M', 'Q', 'T', 'C'}, 8, 45, 1, 65535, NULL, NULL, NULL, 30, 0,\
+NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_DEFAULT, 0, 1, 60, {0, NULL}, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
 
-#define MQTTAsync_connectOptions_initializer5_ws { {'M', 'Q', 'T', 'C'}, 7, 45, 0, 65535, NULL, NULL, NULL, 30, 0,\
-NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_5, 0, 1, 60, {0, NULL}, 1, NULL, NULL, NULL, NULL, NULL}
+#define MQTTAsync_connectOptions_initializer5_ws { {'M', 'Q', 'T', 'C'}, 8, 45, 0, 65535, NULL, NULL, NULL, 30, 0,\
+NULL, NULL, NULL, NULL, 0, NULL, MQTTVERSION_5, 0, 1, 60, {0, NULL}, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
 
 
 /**
@@ -1444,7 +1509,7 @@ LIBMQTT_API int MQTTAsync_subscribe(MQTTAsync handle, const char* topic, int qos
   * An error code is returned if there was a problem registering the
   * subscriptions.
   */
-LIBMQTT_API int MQTTAsync_subscribeMany(MQTTAsync handle, int count, char* const* topic, int* qos, MQTTAsync_responseOptions* response);
+LIBMQTT_API int MQTTAsync_subscribeMany(MQTTAsync handle, int count, char* const* topic, const int* qos, MQTTAsync_responseOptions* response);
 
 /**
   * This function attempts to remove an existing subscription made by the
@@ -1478,7 +1543,8 @@ LIBMQTT_API int MQTTAsync_unsubscribeMany(MQTTAsync handle, int count, char* con
 /**
   * This function attempts to publish a message to a given topic (see also
   * ::MQTTAsync_sendMessage()). An ::MQTTAsync_token is issued when
-  * this function returns successfully. If the client application needs to
+  * this function returns successfully if the QoS is greater than 0.
+  * If the client application needs to
   * test for successful delivery of messages, a callback should be set
   * (see ::MQTTAsync_onSuccess() and ::MQTTAsync_deliveryComplete()).
   * @param handle A valid client handle from a successful call to
@@ -1499,7 +1565,8 @@ LIBMQTT_API int MQTTAsync_send(MQTTAsync handle, const char* destinationName, in
 /**
   * This function attempts to publish a message to a given topic (see also
   * MQTTAsync_publish()). An ::MQTTAsync_token is issued when
-  * this function returns successfully. If the client application needs to
+  * this function returns successfully if the QoS is greater than 0.
+  * If the client application needs to
   * test for successful delivery of messages, a callback should be set
   * (see ::MQTTAsync_onSuccess() and ::MQTTAsync_deliveryComplete()).
   * @param handle A valid client handle from a successful call to
@@ -1547,14 +1614,16 @@ LIBMQTT_API int MQTTAsync_isComplete(MQTTAsync handle, MQTTAsync_token token);
 
 
 /**
- * Waits for a request corresponding to a token to complete.
+ * Waits for a request corresponding to a token to complete.  This only works for
+ * messages with QoS greater than 0.  A QoS 0 message has no MQTT token.
+ * This function will always return ::MQTTASYNC_SUCCESS for a QoS 0 message.
  *
  * @param handle A valid client handle from a successful call to
  * MQTTAsync_create().
  * @param token An ::MQTTAsync_token associated with a request.
  * @param timeout the maximum time to wait for completion, in milliseconds
  * @return ::MQTTASYNC_SUCCESS if the request has been completed in the time allocated,
- *  ::MQTTASYNC_FAILURE if not.
+ *  ::MQTTASYNC_FAILURE or ::MQTTASYNC_DISCONNECTED if not.
  */
 LIBMQTT_API int MQTTAsync_waitForCompletion(MQTTAsync handle, MQTTAsync_token token, unsigned long timeout);
 
@@ -1573,13 +1642,22 @@ LIBMQTT_API void MQTTAsync_freeMessage(MQTTAsync_message** msg);
 
 /**
   * This function frees memory allocated by the MQTT C client library, especially the
-  * topic name. This is needed on Windows when the client libary and application
+  * topic name. This is needed on Windows when the client library and application
   * program have been compiled with different versions of the C compiler.  It is
   * thus good policy to always use this function when freeing any MQTT C client-
   * allocated memory.
   * @param ptr The pointer to the client library storage to be freed.
   */
 LIBMQTT_API void MQTTAsync_free(void* ptr);
+
+/**
+  * This function is used to allocate memory to be used or freed by the MQTT C client library,
+  * especially the data in the ::MQTTPersistence_afterRead and ::MQTTPersistence_beforeWrite
+  * callbacks. This is needed on Windows when the client library and application
+  * program have been compiled with different versions of the C compiler.
+  * @param size The size of the memory to be allocated.
+  */
+LIBMQTT_API void* MQTTAsync_malloc(size_t size);
 
 /**
   * This function frees the memory allocated to an MQTT client (see
@@ -1647,7 +1725,7 @@ LIBMQTT_API MQTTAsync_nameValue* MQTTAsync_getVersionInfo(void);
 LIBMQTT_API const char* MQTTAsync_strerror(int code);
 
 
-/**
+/*!
   * @cond MQTTAsync_main
   * @page async Threading
   * The client application runs on several threads.
@@ -1661,12 +1739,22 @@ LIBMQTT_API const char* MQTTAsync_strerror(int code);
   * MQTTAsync_connectionLost() and MQTTAsync_deliveryComplete()).
   * In addition, some functions allow success and failure callbacks to be set
   * for individual requests, in the ::MQTTAsync_responseOptions structure.  Applications
-  * can be written as a chain of callback functions. Note that it is a theoretically
-  * possible but unlikely event, that a success or failure callback could be called
-  * before function requesting the callback has returned.  In this case the token
-  * delivered in the callback would not yet be known to the application program (see
-  * Race condition for MQTTAsync_token in MQTTAsync.c
-  * https://bugs.eclipse.org/bugs/show_bug.cgi?id=444093)
+  * can be written as a chain of callback functions.
+  *
+  * @page callbacks Callbacks
+  * Any function from this API may be used within a callback.  It is not advisable to
+  * use ::MQTTAsync_waitForCompletion within a callback, however, as it is the only
+  * API call that may take some time to complete, which may cause unpredictable
+  * behaviour.  All the other API calls are intended to complete quickly, starting
+  * a request in the background, with success or failure notified by other callbacks.
+  *
+  * If no callbacks are assigned, this will include the message arrived callback.
+  * This could be done if the application is a pure publisher, and does
+  * not subscribe to any topics.  If however messages are received, and no message
+  * arrived callback is set, then those messages will accumulate
+  * and take up memory, as there is no place for them to be delivered.
+  * A log message will be written to highlight the issue, but it is up
+  * to the application to protect against this situation.
   *
   * @page auto_reconnect Automatic Reconnect
   * The ability for the client library to reconnect automatically in the event
@@ -1694,7 +1782,7 @@ LIBMQTT_API const char* MQTTAsync_strerror(int code);
   *
   * To enable messages to be published when the application is disconnected
   * ::MQTTAsync_createWithOptions must be used instead of ::MQTTAsync_create to
-  * create the client object.  The ::createOptions field sendWhileDisconnected
+  * create the client object.  The ::MQTTAsync_createOptions field sendWhileDisconnected
   * must be set to non-zero, and the maxBufferedMessages field set as required -
   * the default being 100.
   *
@@ -2250,7 +2338,7 @@ exit:
   * @endcond
   */
 
-#ifdef __cplusplus
+#if defined(__cplusplus)
      }
 #endif
 

@@ -56,7 +56,7 @@
 #  include <sys/endian.h>
 #elif defined(_WIN32) || defined(_WIN64)
 #  pragma comment(lib, "rpcrt4.lib")
-#  include <Rpc.h>
+#  include <rpc.h>
 #  define strncasecmp(s1,s2,c) _strnicmp(s1,s2,c)
 #  define htonll(x) _byteswap_uint64(x)
 #  define ntohll(x) _byteswap_uint64(x)
@@ -443,7 +443,8 @@ int WebSocket_connect( networkHandles *net, const char *uri)
 
 		while ( headers->name != NULL && headers->value != NULL )
 		{
-			headers_buf_cur += sprintf(headers_buf_cur, "%s: %s\r\n", headers->name, headers->value);
+			headers_buf_cur += snprintf(headers_buf_cur, headers_buf_len - (headers_buf_cur - headers_buf),
+					"%s: %s\r\n", headers->name, headers->value);
 			headers++;
 		}
 		*headers_buf_cur = '\0';
